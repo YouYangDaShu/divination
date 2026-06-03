@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>玄机阁 · 八字六爻小六壬</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- 背景动效 -->
+    <div class="bg-effects">
+        <div class="bg-circle bg-circle-1"></div>
+        <div class="bg-circle bg-circle-2"></div>
+        <div class="bg-circle bg-circle-3"></div>
+        <div class="stars" id="stars"></div>
+    </div>
+
+    <main class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <h1 class="title">
+                <span class="title-zh">玄机阁</span>
+                <span class="title-en">XUAN JI GE</span>
+            </h1>
+            <p class="subtitle">— 八字 · 六爻 · 小六壬 —</p>
+            <p class="stats-banner" id="statsBanner" style="display:none;">
+                已为有缘人占卜 <span class="stats-total" id="statsTotal">0</span> 次
+            </p>
+            <p class="quota-hint">每位访客每日可免费占卜 3 次 · 心诚则灵，珍惜每一卦</p>
+        </header>
+
+        <!-- 占卜方式选择 -->
+        <section class="mode-tabs">
+            <button class="mode-tab active" data-mode="xiaoliuren">
+                <span class="tab-text">小六壬</span>
+                <span class="tab-desc">占事·诸葛马前课</span>
+            </button>
+            <button class="mode-tab" data-mode="liuyao">
+                <span class="tab-text">六爻</span>
+                <span class="tab-desc">占事·铜钱起卦</span>
+            </button>
+            <button class="mode-tab" data-mode="bazi">
+                <span class="tab-text">八字</span>
+                <span class="tab-desc">算命·四柱排盘</span>
+            </button>
+            <button class="mode-tab" data-mode="hehun">
+                <span class="tab-text">合婚</span>
+                <span class="tab-desc">姻缘·两人合八字</span>
+            </button>
+            <button class="mode-tab" data-mode="ziwei">
+                <span class="tab-text">紫微</span>
+                <span class="tab-desc">命盘·十二宫排布</span>
+            </button>
+            <button class="mode-tab" data-mode="meihua">
+                <span class="tab-text">梅花</span>
+                <span class="tab-desc">数字/时间·体用生克</span>
+            </button>
+            <button class="mode-tab" data-mode="qimen">
+                <span class="tab-text">奇门</span>
+                <span class="tab-desc">时家奇门·九宫排盘</span>
+            </button>
+            <button class="mode-tab" data-mode="huangli">
+                <span class="tab-text">黄历</span>
+                <span class="tab-desc">今日宜忌·吉时凶时</span>
+            </button>
+            <button class="mode-tab" data-mode="dream">
+                <span class="tab-text">解梦</span>
+                <span class="tab-desc">周公·心理学双视角</span>
+            </button>
+        </section>
+
+        <!-- 当前模式说明（根据 tab 切换） -->
+        <section id="mode-intro" class="mode-intro">
+            <div class="intro-line">
+                <span class="intro-purpose" id="intro-purpose"></span>
+                <span class="intro-suit" id="intro-suit"></span>
+            </div>
+        </section>
+
+        <!-- 小六壬/六爻 输入 -->
+        <section id="input-divine" class="input-section">
+            <div class="input-card">
+                <label class="input-label">心中所问</label>
+                <input type="text" id="question" class="question-input" placeholder="心诚则灵，请输入想问之事...（可留空）" maxlength="50">
+
+                <div class="ai-context-field">
+                    <label class="ai-context-label">🔮 想让 AI 结合你的情况细说？（选填）</label>
+                    <textarea class="question-input ai-context" rows="2" maxlength="500"
+                        placeholder="可写下你的具体处境，例如：最近在纠结要不要换工作、和对象闹了矛盾...AI 会结合卦象给你说说（留空则只出传统卦象）"
+                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
+                </div>
+
+                <button id="divine-btn" class="divine-btn">
+                    <span class="btn-text">起 卦</span>
+                    <span class="btn-icon"></span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 八字 输入 -->
+        <section id="input-bazi" class="input-section hidden">
+            <div class="input-card">
+                <label class="input-label">出生信息</label>
+
+                <div class="form-field" style="margin-bottom: 16px;">
+                    <label>性别</label>
+                    <div class="gender-tabs">
+                        <button class="gender-tab active" data-gender="男">男 男</button>
+                        <button class="gender-tab" data-gender="女">女 女</button>
+                    </div>
+                </div>
+
+                <div class="form-field" style="margin-bottom: 16px;">
+                    <label>历法</label>
+                    <div class="gender-tabs">
+                        <button class="cal-tab active" data-cal="solar"> 阳历(公历)</button>
+                        <button class="cal-tab" data-cal="lunar"> 农历</button>
+                    </div>
+                </div>
+
+                <div class="form-field" style="margin-bottom: 16px;">
+                    <label>出生日期</label>
+                    <div class="date-picker">
+                        <select id="birth-year" class="bazi-input"></select>
+                        <select id="birth-month" class="bazi-input"></select>
+                        <select id="birth-day" class="bazi-input"></select>
+                        <label class="leap-month-wrap hidden" id="leap-wrap">
+                            <input type="checkbox" id="leap-month">
+                            <span>闰月</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-field" style="margin-bottom: 16px;">
+                    <label>出生时间（24小时制）</label>
+                    <div class="date-picker">
+                        <select id="birth-hour" class="bazi-input"></select>
+                        <select id="birth-minute" class="bazi-input"></select>
+                    </div>
+                </div>
+
+                <p class="form-hint"> 时辰要尽量准确。古代以两小时为一时辰：子(23-1)、丑(1-3)、寅(3-5)…</p>
+
+                <div class="ai-context-field">
+                    <label class="ai-context-label">🔮 想让 AI 结合你的情况细说？（选填）</label>
+                    <textarea class="question-input ai-context" rows="2" maxlength="500"
+                        placeholder="可写下你的具体处境，例如：最近事业遇到瓶颈、感情上有困惑...AI 会结合命盘给你说说（留空则只出传统命盘）"
+                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
+                </div>
+
+                <button id="bazi-btn" class="divine-btn">
+                    <span class="btn-text">排 盘</span>
+                    <span class="btn-icon"></span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 合婚 输入 -->
+        <section id="input-hehun" class="input-section hidden">
+            <div class="input-card">
+                <label class="input-label">两人出生信息</label>
+                <p class="form-hint"> 输入两人的生辰八字，系统从生肖、日干、夫妻宫、五行互补、纳音、喜用神 6 大维度评估匹配度。<br> 双方都可独立选择性别（同性 / 异性都支持）。</p>
+
+                <!-- 伴侣 A -->
+                <div class="hehun-person p1">
+                    <h4 class="hehun-person-title"> 伴侣 A</h4>
+                    <div class="form-field">
+                        <label>性别</label>
+                        <div class="gender-tabs hehun-gender" data-person="p1">
+                            <button class="gender-tab active" data-gender="男">男 男</button>
+                            <button class="gender-tab" data-gender="女">女 女</button>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label>历法</label>
+                        <div class="gender-tabs hehun-cal" data-person="p1">
+                            <button class="cal-tab active" data-cal="solar"> 阳历</button>
+                            <button class="cal-tab" data-cal="lunar"> 农历</button>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label>出生日期</label>
+                        <div class="date-picker">
+                            <select id="p1-year" class="bazi-input hehun-year" data-person="p1"></select>
+                            <select id="p1-month" class="bazi-input hehun-month" data-person="p1"></select>
+                            <select id="p1-day" class="bazi-input hehun-day" data-person="p1"></select>
+                            <label class="leap-month-wrap hidden" id="p1-leap-wrap">
+                                <input type="checkbox" id="p1-leap"><span>闰月</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label>出生时间</label>
+                        <div class="date-picker">
+                            <select id="p1-hour" class="bazi-input hehun-hour"></select>
+                            <select id="p1-minute" class="bazi-input hehun-minute"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hehun-divider">+</div>
+
+                <!-- 伴侣 B -->
+                <div class="hehun-person p2">
+                    <h4 class="hehun-person-title"> 伴侣 B</h4>
+                    <div class="form-field">
+                        <label>性别</label>
+                        <div class="gender-tabs hehun-gender" data-person="p2">
+                            <button class="gender-tab" data-gender="男">男 男</button>
+                            <button class="gender-tab active" data-gender="女">女 女</button>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label>历法</label>
+                        <div class="gender-tabs hehun-cal" data-person="p2">
+                            <button class="cal-tab active" data-cal="solar"> 阳历</button>
+                            <button class="cal-tab" data-cal="lunar"> 农历</button>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label>出生日期</label>
+                        <div class="date-picker">
+                            <select id="p2-year" class="bazi-input hehun-year" data-person="p2"></select>
+                            <select id="p2-month" class="bazi-input hehun-month" data-person="p2"></select>
+                            <select id="p2-day" class="bazi-input hehun-day" data-person="p2"></select>
+                            <label class="leap-month-wrap hidden" id="p2-leap-wrap">
+                                <input type="checkbox" id="p2-leap"><span>闰月</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label>出生时间</label>
+                        <div class="date-picker">
+                            <select id="p2-hour" class="bazi-input hehun-hour"></select>
+                            <select id="p2-minute" class="bazi-input hehun-minute"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ai-context-field">
+                    <label class="ai-context-label">🔮 想让 AI 结合你们的情况细说？（选填）</label>
+                    <textarea class="question-input ai-context" rows="2" maxlength="500"
+                        placeholder="可写下你们的具体情况，例如：在一起多久了、家里有什么顾虑...AI 会结合合婚结果给你说说（留空则只出传统合婚分析）"
+                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
+                </div>
+
+                <button id="hehun-btn" class="divine-btn">
+                    <span class="btn-text">合 八 字</span>
+                    <span class="btn-icon"></span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 梅花易数 输入 -->
+        <section id="input-meihua" class="input-section hidden">
+            <div class="input-card">
+                <label class="input-label">心中所问</label>
+                <input type="text" id="meihua-question" class="question-input" placeholder="心诚则灵，请输入想问之事...（可留空）" maxlength="50">
+
+                <div class="form-field" style="margin-top:14px;margin-bottom: 14px;">
+                    <label>起卦方式</label>
+                    <div class="gender-tabs">
+                        <button class="meihua-mode-tab active" data-mhmode="time"> 时间起卦</button>
+                        <button class="meihua-mode-tab" data-mhmode="num"> 数字起卦</button>
+                    </div>
+                </div>
+
+                <div id="meihua-num-inputs" class="hidden" style="display:flex;gap:10px;margin-bottom:14px;">
+                    <input type="number" id="meihua-num1" placeholder="第一个数（上卦）" min="1" max="9999" class="question-input" style="flex:1;">
+                    <input type="number" id="meihua-num2" placeholder="第二个数（下卦+动爻）" min="1" max="9999" class="question-input" style="flex:1;">
+                </div>
+
+                <div class="ai-context-field">
+                    <label class="ai-context-label">🔮 想让 AI 结合你的情况细说？（选填）</label>
+                    <textarea class="question-input ai-context" rows="2" maxlength="500"
+                        placeholder="可写下你想问的具体事情，AI 会结合卦象给你说说（留空则只出传统卦象）"
+                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
+                </div>
+
+                <button id="meihua-btn" class="divine-btn">
+                    <span class="btn-text">起 梅 花 卦</span>
+                    <span class="btn-icon"></span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 奇门遁甲 输入 -->
+        <section id="input-qimen" class="input-section hidden">
+            <div class="input-card">
+                <label class="input-label">心中所问</label>
+                <input type="text" id="qimen-question" class="question-input" placeholder="求财、出行、求人、谋事...（可留空）" maxlength="50">
+
+                <div class="form-field" style="margin-top:14px;margin-bottom: 14px;">
+                    <label>起局方法</label>
+                    <div class="gender-tabs">
+                        <button class="qimen-opt-tab active" data-qmopt="2">置闰法</button>
+                        <button class="qimen-opt-tab" data-qmopt="1">拆补法</button>
+                    </div>
+                </div>
+
+                <div class="ai-context-field">
+                    <label class="ai-context-label">🔮 想让 AI 结合你的情况细说？（选填）</label>
+                    <textarea class="question-input ai-context" rows="2" maxlength="500"
+                        placeholder="可写下你想问的具体事情，AI 会结合奇门盘给你说说（留空则只出传统排盘）"
+                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
+                </div>
+
+                <button id="qimen-btn" class="divine-btn">
+                    <span class="btn-text">起 奇 门 局</span>
+                    <span class="btn-icon"></span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 黄历 输入 -->
+        <section id="input-huangli" class="input-section hidden">
+            <div class="input-card">
+                <label class="input-label">查询日期</label>
+                <input type="date" id="huangli-date" class="question-input">
+                <div style="font-size:0.86em;color:#888;margin-top:6px;">留空查今日</div>
+
+                <div class="ai-context-field">
+                    <label class="ai-context-label">🔮 想让 AI 结合你的安排细说？（选填）</label>
+                    <textarea class="question-input ai-context" rows="2" maxlength="500"
+                        placeholder="可写下你这天的安排或想问的事，例如：想挑个日子搬家、签合同...AI 会结合黄历给你说说（留空则只出传统黄历）"
+                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
+                </div>
+
+                <button id="huangli-btn" class="divine-btn" style="margin-top:14px;">
+                    <span class="btn-text">查 黄 历</span>
+                    <span class="btn-icon"></span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 解梦 输入 -->
+        <section id="input-dream" class="input-section hidden">
+            <div class="input-card">
+                <label class="input-label">梦境内容</label>
+                <textarea id="dream-text" class="question-input" rows="5" maxlength="2000"
+                    placeholder="尽量详细地描述你的梦境...&#10;例如：我梦见自己掉进一口很深的井，井里都是水但我没淹死，往上看井口很小很远..."
+                    style="resize:vertical;min-height:120px;font-family:inherit;line-height:1.6;"></textarea>
+                <div style="font-size:0.84em;color:#888;margin-top:4px;">越详细解读越准（最多 2000 字）</div>
+
+                <div class="form-field" style="margin-top:14px;">
+                    <label>醒来情绪（可选）</label>
+                    <input type="text" id="dream-mood" class="question-input" maxlength="50"
+                        placeholder="例如：紧张、放松、害怕、兴奋、莫名难过...">
+                </div>
+
+                <div class="form-field" style="margin-top:14px;">
+                    <label>近期处境/线索（可选）</label>
+                    <input type="text" id="dream-context" class="question-input" maxlength="200"
+                        placeholder="最近在忙什么、有什么压力或变化...">
+                </div>
+
+                <button id="dream-btn" class="divine-btn" style="margin-top:18px;">
+                    <span class="btn-text">解 梦</span>
+                    <span class="btn-icon"></span>
+                </button>
+                <div style="font-size:0.78em;color:#999;margin-top:10px;text-align:center;">
+                     解梦需 10-30 秒（AI 推演中），耐心等待
+                </div>
+            </div>
+        </section>
+
+        <!-- 结果展示区 -->
+        <section id="result-section" class="result-section hidden">
+            <!-- 加载动画 -->
+            <div id="loading" class="loading hidden">
+                <!-- 铜钱动画容器 -->
+                <div id="coin-toss" class="coin-toss hidden">
+                    <div class="coin coin-1"><div class="coin-face"></div></div>
+                    <div class="coin coin-2"><div class="coin-face"></div></div>
+                    <div class="coin coin-3"><div class="coin-face"></div></div>
+                </div>
+                <!-- 通用 spinner -->
+                <div id="spinner" class="bagua-spinner">
+                    <div class="bagua-inner"></div>
+                </div>
+                <p class="loading-text" id="loading-text">天机推演中...</p>
+            </div>
+
+            <!-- 结果内容 -->
+            <div id="result-content"></div>
+        </section>
+
+        <!-- 历史记录 -->
+
+        <footer class="footer">
+            <p class="footer-disclaimer">本站占卜纯属娱乐 · 一切结果由求测者自行解读与承担 · 趋吉避凶在己，与本站无涉 · 命由己造，福自心生</p>
+            <p>占卜仅供参考 · 关键还在自己 ·  不可全信</p>
+            <p class="footer-mini">玄机阁 · Made with +</p>
+        </footer>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
