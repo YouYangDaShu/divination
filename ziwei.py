@@ -1,119 +1,192 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""紫微斗数排盘 (基于 py-iztro)
+"""紫微斗数排盘（通过 Node 桥接调 iztro 本体）
 
-核心：调用 py-iztro 计算 12 宫位 + 主星 + 辅星 + 大限/小限 + 流年。
-返回结构化 JSON，前端按"圆桌十二宫"或"扁平十二宫"渲染均可。
+所有星曜（主星+辅星+杂耀+四化+亮度+大限+长生12神）一次性全对，永远不会抄错。
 """
-
 import datetime
-from typing import Optional
+import json
+import os
+import subprocess
+
+_BRIDGE_SCRIPT = os.path.join(os.path.dirname(__file__), "ziwei_bridge.js")
+_NODE_BIN = "/home/youyang/.local/bin/node"
+
+# 生肖表
+ZODIAC = ["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"]
+EARTHLY_BRANCHES = ["子","丑","寅","卯","辰","巳","午","未","申","酉","戌","亥"]
 
 
-def _to_dict(obj):
-    """递归把 pydantic 模型转 dict（兼容 v1/v2）。"""
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    if hasattr(obj, "dict"):
-        return obj.dict()
-    return obj
+def _hour_to_time_index(hour: int, minute: int = 0) -> int:
+    """把 24 小时制转成时辰索引 0-11（0=子,1=丑,...,11=亥）"""
+    if hour == 23 or hour == 0:
+        return 0  # 子时
+    return ((hour + 1) // 2) % 12
+
+
+def _get_zodiac_sign(month: int, day: int) -> str:
+    signs = [
+        ((1, 20), (2, 19), "水瓶座"), ((2, 20), (3, 20), "双鱼座"),
+        ((3, 21), (4, 20), "白羊座"), ((4, 21), (5, 20), "金牛座"),
+        ((5, 21), (6, 21), "双子座"), ((6, 22), (7, 22), "巨蟹座"),
+        ((7, 23), (8, 22), "狮子座"), ((8, 23), (9, 22), "处女座"),
+        ((9, 23), (10, 23), "天秤座"), ((10, 24), (11, 22), "天蝎座"),
+        ((11, 23), (12, 21), "射手座"), ((12, 22), (1, 19), "摩羯座"),
+    ]
+    for (sm, sd), (em, ed), name in signs:
+        if sm == 12:
+            if (month == 12 and day >= sd) or (month == 1 and day <= ed):
+                return name
+        else:
+            if (month == sm and day >= sd) or (month == em and day <= ed):
+                return name
+    return "?"
 
 
 def ziwei_full(birth: datetime.datetime, gender: str, fix_leap: bool = True) -> dict:
-    """完整紫微斗数排盘。
+    """完整紫微斗数排盘（调 iztro Node 库）
 
     Args:
         birth: 阳历生辰
         gender: '男' 或 '女'
-        fix_leap: 是否修正闰月（一般 True）
+        fix_leap: 是否修正闰月（iztro 默认 True）
     """
-    from py_iztro import Astro
+    solar_date = birth.strftime("%Y-%m-%d")
+    time_index = _hour_to_time_index(birth.hour, birth.minute)
 
-    astro = Astro()
-    # 时辰索引：子=0, 丑=1, ..., 亥=11，按真太阳时小时映射
-    # py-iztro 的时辰参数是 0-11
-    h = birth.hour
-    # 23:00-00:59 子时(0)，01:00-02:59 丑时(1)，...
-    if h == 23:
-        time_idx = 0
-    else:
-        time_idx = ((h + 1) // 2) % 12
+    # 调 Node 桥接脚本
+    cmd = [_NODE_BIN, _BRIDGE_SCRIPT, solar_date, str(time_index), gender]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=10,
+            cwd=os.path.dirname(__file__)
+        )
+    except FileNotFoundError:
+        raise ImportError(f"Node.js 未找到: {_NODE_BIN}，请安装 Node.js")
 
-    solar_str = birth.strftime("%Y-%m-%d")
-    chart = astro.by_solar(solar_str, time_idx, gender, fix_leap, "zh-CN")
-    data = _to_dict(chart)
+    if proc.returncode != 0:
+        stderr = proc.stderr.strip()
+        raise RuntimeError(f"iztro 排盘失败: {stderr}")
 
-    # 简化输出
+    try:
+        raw = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        raise RuntimeError("iztro 输出解析失败")
+
+    return _to_frontend_format(raw, birth, gender)
+
+
+def _to_frontend_format(raw: dict, birth: datetime.datetime, gender: str) -> dict:
+    """把 iztro 原始 JSON 转成前端期望的嵌套格式"""
+    palaces = []
+    for p in raw.get("palaces", []):
+        # 主星：name + brightness + mutagen
+        majors = []
+        for s in p.get("majorStars", []):
+            parts = [s.get("name", "")]
+            b = s.get("brightness", "")
+            m = s.get("mutagen", "")
+            if b:
+                parts.append(b)
+            if m:
+                parts.append(m)
+            majors.append("".join(parts))
+
+        # 辅星：name + brightness
+        minors = []
+        for s in p.get("minorStars", []):
+            parts = [s.get("name", "")]
+            b = s.get("brightness", "")
+            if b:
+                parts.append(b)
+            minors.append("".join(parts))
+
+        # 杂耀：name only
+        adjs = [s.get("name", "") for s in p.get("adjectiveStars", [])]
+
+        palaces.append({
+            "index": p.get("index"),
+            "name": p.get("name"),
+            "stem": p.get("heavenlyStem", ""),
+            "branch": p.get("earthlyBranch", ""),
+            "is_body_palace": p.get("isBodyPalace", False),
+            "is_original_palace": p.get("isOriginalPalace", False),
+            "major_stars": majors,
+            "minor_stars": minors,
+            "adjective_stars": adjs,
+            "decadal": p.get("decadal"),
+            "changsheng12": p.get("changsheng12", ""),
+            "boshi12": p.get("boshi12", ""),
+            "jiangqian12": p.get("jiangqian12", ""),
+            "suiqian12": p.get("suiqian12", ""),
+            "ages": p.get("ages"),
+        })
+
+    # 计算当前年龄和大限
+    today = datetime.date.today()
+    age = today.year - birth.year - (1 if (today.month, today.day) < (birth.month, birth.day) else 0)
+    # 虚岁 = 实岁 + 1
+    virtual_age = age + 1
+
+    current_decadal_palace = None
+    current_decadal_range = None
+    for p in palaces:
+        d = p.get("decadal")
+        if d and d.get("range") and len(d["range"]) == 2:
+            if d["range"][0] <= virtual_age <= d["range"][1]:
+                current_decadal_palace = p["name"]
+                current_decadal_range = d["range"]
+                break
+
+    # 命主/身主
+    soul_master = raw.get("soul", "")
+    body_master = raw.get("body", "")
+    # 命宫地支/身宫地支
+    soul_branch = raw.get("earthlyBranchOfSoulPalace", "")
+    body_branch = raw.get("earthlyBranchOfBodyPalace", "")
+    # 五行局
+    five_elements = raw.get("fiveElementsClass", "")
+    # 星座
+    sign = raw.get("sign", "") or _get_zodiac_sign(birth.month, birth.day)
+    # 生肖
+    zodiac = raw.get("zodiac", "")
+
     result = {
         "datetime": datetime.datetime.now().isoformat(),
         "input": {
             "birth": birth.isoformat(),
             "gender": gender,
-            "time_idx": time_idx,
+            "time_idx": _hour_to_time_index(birth.hour, birth.minute),
         },
         "basic": {
-            "gender": data.get("gender"),
-            "solar_date": data.get("solar_date"),
-            "lunar_date": data.get("lunar_date"),
-            "chinese_date": data.get("chinese_date"),  # 八字
-            "time": data.get("time"),
-            "time_range": data.get("time_range"),
-            "sign": data.get("sign"),  # 星座
-            "zodiac": data.get("zodiac"),  # 生肖
-            "soul_branch": data.get("earthly_branch_of_soul_palace"),
-            "body_branch": data.get("earthly_branch_of_body_palace"),
-            "soul_master": data.get("soul"),  # 命主
-            "body_master": data.get("body"),  # 身主
-            "five_elements": data.get("five_elements_class"),  # 五行局
+            "gender": gender,
+            "solar_date": birth.strftime("%Y-%m-%d %H:%M"),
+            "lunar_date": raw.get("lunarDate", ""),
+            "chinese_date": raw.get("chineseDate", ""),
+            "time": raw.get("time", ""),
+            "time_range": raw.get("timeRange", ""),
+            "sign": sign,
+            "zodiac": zodiac,
+            "soul_branch": soul_branch,
+            "body_branch": body_branch,
+            "soul_master": soul_master,
+            "body_master": body_master,
+            "five_elements": five_elements,
+            "five_elements_class": five_elements,
         },
-        "palaces": [],
+        "palaces": palaces,
+        "current_age": age,
+        "current_virtual_age": virtual_age,
     }
-
-    # 整理 12 宫
-    for p in data.get("palaces", []):
-        major_stars = [s.get("name") + (s.get("brightness") or "") + (("[" + s["mutagen"] + "]") if s.get("mutagen") else "")
-                       for s in (p.get("major_stars") or [])]
-        minor_stars = [s.get("name") + (s.get("brightness") or "") for s in (p.get("minor_stars") or [])]
-        adj_stars = [s.get("name") for s in (p.get("adjective_stars") or [])]
-
-        result["palaces"].append({
-            "index": p.get("index"),
-            "name": p.get("name"),  # 命/兄弟/夫妻/...
-            "is_body_palace": p.get("is_body_palace"),
-            "is_original_palace": p.get("is_original_palace"),
-            "stem": p.get("heavenly_stem"),
-            "branch": p.get("earthly_branch"),
-            "major_stars": major_stars,
-            "minor_stars": minor_stars,
-            "adjective_stars": adj_stars,
-            "changsheng12": p.get("changsheng12"),
-            "boshi12": p.get("boshi12"),
-            "jiangqian12": p.get("jiangqian12"),
-            "suiqian12": p.get("suiqian12"),
-            "decadal": p.get("decadal"),  # {range:[a,b], stem, branch}
-            "ages": p.get("ages"),  # 该宫小限对应的年龄列表
-        })
-
-    # 找当前年龄所在的大限宫
-    today = datetime.date.today()
-    age = today.year - birth.year - (
-        1 if (today.month, today.day) < (birth.month, birth.day) else 0
-    )
-    result["current_age"] = age
-    for p in result["palaces"]:
-        d = p.get("decadal") or {}
-        rng = d.get("range") or []
-        if len(rng) == 2 and rng[0] <= age <= rng[1]:
-            result["current_decadal_palace"] = p["name"]
-            result["current_decadal_range"] = rng
-            break
+    if current_decadal_palace:
+        result["current_decadal_palace"] = current_decadal_palace
+        result["current_decadal_range"] = current_decadal_range
 
     return result
 
 
 # 便于命令行测试
 if __name__ == "__main__":
-    import json
-    b = datetime.datetime(2000, 10, 29, 1, 0)
+    b = datetime.datetime(1995, 6, 16, 14, 30)
     r = ziwei_full(b, "男")
     print(json.dumps(r, ensure_ascii=False, indent=2))

@@ -1,4 +1,147 @@
-// 玄机阁 - 占卜网页 JS
+// ============================================================
+// 玄机阁 - app.js
+// 分区：1.配置与状态 2.初始化 3.Tab切换 4.按钮绑定 5.占卜函数 6.结果渲染 7.工具函数
+// ============================================================
+
+// ===== 工具函数 =====
+// 带超时的 fetch（默认 15 秒）
+async function fetchJSON(url, options, timeoutMs) {
+    timeoutMs = timeoutMs || 15000;
+    const ctrl = new AbortController();
+    const timer = setTimeout(function() { ctrl.abort(); }, timeoutMs);
+    try {
+        const res = await Promise.race([
+            fetch(url, Object.assign({}, options, { signal: ctrl.signal })),
+            new Promise(function(_, rej) {
+                ctrl.signal.addEventListener('abort', function() { rej(new Error('请求超时')); });
+            })
+        ]);
+        clearTimeout(timer);
+        return res;
+    } catch (e) {
+        clearTimeout(timer);
+        if (e.name === 'AbortError') throw new Error('请求超时，请稍后重试');
+        throw e;
+    }
+}
+
+// 吉凶等级颜色（全局复用）
+function _levelColor(lv) { return { '极吉': '#3a9d23', '吉': '#3a9d23', '比和': '#7bb950', '平': '#8b8b8b', '凶': '#c2410c', '极凶': '#c2410c' }[lv] || '#999'; }
+
+// 按钮加载状态
+function saveBtnText(btnId) {
+    var btn = document.getElementById(btnId);
+    if (btn && btn.querySelector('.btn-text') && !btn.dataset.origText) {
+        btn.dataset.origText = btn.querySelector('.btn-text').textContent;
+    }
+}
+function setBtnLoading(btnId, loading) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.disabled = loading;
+    btn.style.opacity = loading ? 0.6 : '';
+    var txt = btn.querySelector('.btn-text');
+    if (txt) txt.textContent = loading ? '计算中…' : (btn.dataset.origText || txt.textContent);
+}
+// (doneLoading 已移除 — 完全由 _callApi 替代)
+
+// ===== 统一辅助函数 =====
+function _showLoading(text) {
+    document.getElementById("result-section").classList.remove("hidden");
+    document.getElementById("loading").classList.remove("hidden");
+    document.getElementById("result-content").innerHTML = "";
+    document.getElementById("coin-toss")?.classList.add("hidden");
+    document.getElementById("spinner")?.classList.remove("hidden");
+    if (text) document.getElementById("loading-text").textContent = text;
+}
+function _hideLoading() { document.getElementById("loading")?.classList.add("hidden"); }
+function _showError(msg) {
+    document.getElementById("result-content").innerHTML =
+        `<div class="result-card error-card">${msg}</div>`;
+}
+function _scrollToResult() {
+    document.getElementById("result-section").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function _savedBlock(data) { return ""; } // Obsidian 导出已下线
+
+// 通用 API 调用：统一 loading → 渲染/错误
+async function _callApi(endpoint, payload, btnId, renderFn, loadingText) {
+    saveBtnText(btnId);
+    setBtnLoading(btnId, true);
+    _showLoading(loadingText);
+    try {
+        const res = await fetchJSON(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (handleRateLimit(res, data)) { _hideLoading(); return; }
+        _hideLoading();
+        if (data.error) { _showError(data.error); return; }
+        document.getElementById("result-content").innerHTML = renderFn(data);
+        _scrollToResult();
+    } catch (e) {
+        _hideLoading();
+        _showError("请求失败：" + e.message);
+    } finally {
+        setBtnLoading(btnId, false);
+    }
+}
+
+// 下拉选择框填充通用函数
+function _populateSelect(id, start, end, formatter, defaultVal) {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = "";
+    const step = start <= end ? 1 : -1;
+    for (let v = start; v !== end + step; v += step) {
+        const opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = formatter(v);
+        sel.appendChild(opt);
+    }
+    if (defaultVal !== undefined) sel.value = defaultVal;
+}
+function _createYearOptions(selId, defaultYear) {
+    const cur = new Date().getFullYear();
+    _populateSelect(selId, cur, 1900, y => y + "年", defaultYear ?? 1995);
+}
+function _createMonthOptions(selId) {
+    _populateSelect(selId, 1, 12, m => m + "月", 6);
+}
+function _createHourOptions(selId, defaultHour) {
+    const sc = ["子","子","丑","丑","寅","寅","卯","卯","辰","辰","巳","巳",
+                "午","午","未","未","申","申","酉","酉","戌","戌","亥","亥"];
+    _populateSelect(selId, 0, 23, h => String(h).padStart(2,"0")+"时（"+sc[h]+"）", defaultHour ?? 14);
+}
+function _createMinuteOptions(selId, step, defaultMin) {
+    _populateSelect(selId, 0, 59, m => String(m).padStart(2,"0")+"分", defaultMin ?? 30);
+}
+function _updateDayOptions(prefix, calQuery) {
+    const yearSel = document.getElementById(prefix+"-year");
+    const monthSel = document.getElementById(prefix+"-month");
+    const daySel = document.getElementById(prefix+"-day");
+    if (!yearSel || !daySel) return;
+    const yr = parseInt(yearSel.value), mo = parseInt(monthSel.value);
+    let isLunar = false;
+    if (calQuery) {
+        const cc = document.querySelector(calQuery);
+        isLunar = cc?.querySelector(".cal-tab.active")?.dataset.cal === "lunar";
+    } else {
+        isLunar = selectedCalendar === "lunar";
+    }
+    const maxDay = isLunar ? 30 : new Date(yr, mo, 0).getDate();
+    const old = parseInt(daySel.value) || 1;
+    daySel.innerHTML = "";
+    for (let d = 1; d <= maxDay; d++) {
+        const opt = document.createElement("option");
+        opt.value = d;
+        opt.textContent = d + "日";
+        daySel.appendChild(opt);
+    }
+    daySel.value = Math.min(old, maxDay);
+}
 
 let currentMode = "xiaoliuren";
 let selectedGender = "男";
@@ -25,6 +168,9 @@ function updateModeIntro(mode) {
     if (p) p.textContent = info.p;
     if (s) s.textContent = info.s;
 }
+// ============================
+// 第二部分：初始化
+// ============================
 // ============== 初始化 ==============
 document.addEventListener("DOMContentLoaded", () => {
     initStars();
@@ -39,7 +185,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // 加载人气统计数字（公开展示）
 async function loadStats() {
     try {
-        const res = await fetch("/api/stats");
+        const res = await fetchJSON("/api/stats");
         if (!res.ok) return;
         const data = await res.json();
         if (handleRateLimit(res, data)) { const _l = document.getElementById("loading"); if (_l) _l.classList.add("hidden"); return; }
@@ -57,79 +203,21 @@ async function loadStats() {
 function handleRateLimit(res, data) {
     if (res.status === 429) {
         const msg = (data && data.message) || "今日免费占卜次数已用完，明天再来吧～";
-        alert(msg);
+        // 用内联错误卡代替 alert，避免打断流程
+        showInlineError(msg);
         return true;
     }
     return false;
 }
 
-// ===== AI 解读：全局注入处境 + 自动渲染（零侵入，不改 8 个渲染函数）=====
-// 当前激活输入区里的处境框值
-function getActiveContext() {
-    // 找当前可见 input-section 内的 .ai-context 文本框
-    const sections = document.querySelectorAll(".input-section");
-    for (const sec of sections) {
-        if (sec.classList.contains("hidden")) continue;
-        const box = sec.querySelector(".ai-context");
-        if (box && box.value.trim()) return box.value.trim();
-    }
-    return "";
+// 内联错误卡（替换 alert 限流提示）
+function showInlineError(msg) {
+    const resultDiv = document.getElementById("result");
+    if (!resultDiv) { alert(msg); return; }
+    resultDiv.innerHTML = `<div class="error-card" style="font-size:1.1em;">${msg}</div>`;
+    resultDiv.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-// 包装全局 fetch：给占卜 POST 自动塞 user_context；响应里有 ai_reading 就渲染
-(function () {
-    const _origFetch = window.fetch.bind(window);
-    const DIVINE_APIS = ["/api/liuyao","/api/xiaoliuren","/api/bazi","/api/he_hun",
-                         "/api/ziwei","/api/meihua","/api/qimen","/api/huangli"];
-    window.fetch = async function (url, opts) {
-        opts = opts || {};
-        const isDivine = typeof url === "string" && DIVINE_APIS.some(a => url.indexOf(a) >= 0);
-        if (isDivine && opts.method === "POST" && opts.body) {
-            try {
-                const payload = JSON.parse(opts.body);
-                const ctx = getActiveContext();
-                if (ctx) payload.user_context = ctx;
-                opts.body = JSON.stringify(payload);
-            } catch (e) { /* 非 JSON body，跳过 */ }
-        }
-        const res = await _origFetch(url, opts);
-        // 占卜成功响应：克隆读出 ai_reading，渲染后追加到结果区
-        if (isDivine && res.ok) {
-            res.clone().json().then(data => {
-                if (data && data.ai_reading) renderAiReading(data.ai_reading);
-            }).catch(() => {});
-        }
-        return res;
-    };
-})();
-
-// 把 AI 解读渲染成卡片，追加到结果区末尾。
-// 轮询等原渲染函数把结果填进去（它们有 sleep+innerHTML 覆盖），再追加，避免被覆盖。
-function renderAiReading(text) {
-    const safe = String(text)
-        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-        .replace(/\n/g, "<br>");
-    let tries = 0;
-    const timer = setInterval(() => {
-        tries++;
-        const container = document.getElementById("result-content");
-        const hasResult = container && container.children.length > 0;
-        // 结果区已有内容（原渲染跑完），或等够 20 次（4 秒）兜底
-        if (hasResult || tries > 20) {
-            clearInterval(timer);
-            if (!container) return;
-            if (container.querySelector(".ai-reading-card")) return; // 去重
-            const card = document.createElement("div");
-            card.className = "result-card ai-reading-card";
-            card.innerHTML = `<div class="ai-reading-title">🔮 AI 结合你的处境解读</div>
-                <div class="ai-reading-body">${safe}</div>
-                <div class="ai-reading-foot">— 仅供娱乐参考，路在自己脚下 —</div>`;
-            container.appendChild(card);
-            card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }
-    }, 200);
-}
 
 function initStars() {
     const stars = document.getElementById("stars");
@@ -144,6 +232,9 @@ function initStars() {
     }
 }
 
+// ============================
+// 第三部分：Tab 切换
+// ============================
 function initModeTabs() {
     document.querySelectorAll(".mode-tab").forEach(tab => {
         tab.addEventListener("click", () => {
@@ -255,103 +346,25 @@ function initGenderTabs() {
     });
 }
 
-function initCalendarTabs() {
-    // 已合并到 initGenderTabs，保留为空兼容旧调用
-}
+// (initCalendarTabs 已移除 — 空函数)
 
 function initDatePickers() {
-    const yearSel = document.getElementById("birth-year");
-    const monthSel = document.getElementById("birth-month");
-    const daySel = document.getElementById("birth-day");
-    const hourSel = document.getElementById("birth-hour");
-    const minuteSel = document.getElementById("birth-minute");
-
-    const currentYear = new Date().getFullYear();
-
-    // 年份：当前年到1900，倒序
-    yearSel.innerHTML = "";
-    for (let y = currentYear; y >= 1900; y--) {
-        const opt = document.createElement("option");
-        opt.value = y;
-        opt.textContent = y + "年";
-        yearSel.appendChild(opt);
-    }
-    yearSel.value = "1995";
-
-    // 月份 1-12
-    monthSel.innerHTML = "";
-    for (let m = 1; m <= 12; m++) {
-        const opt = document.createElement("option");
-        opt.value = m;
-        opt.textContent = m + "月";
-        monthSel.appendChild(opt);
-    }
-    monthSel.value = "6";
-
-    // 日：根据年月动态
-    updateDayOptions();
-    daySel.value = "15";
-
-    // 时 0-23
-    hourSel.innerHTML = "";
-    const shichenLabels = {
-        0: "(子时)", 1: "(丑时)", 2: "(丑时)", 3: "(寅时)", 4: "(寅时)",
-        5: "(卯时)", 6: "(卯时)", 7: "(辰时)", 8: "(辰时)", 9: "(巳时)",
-        10: "(巳时)", 11: "(午时)", 12: "(午时)", 13: "(未时)", 14: "(未时)",
-        15: "(申时)", 16: "(申时)", 17: "(酉时)", 18: "(酉时)", 19: "(戌时)",
-        20: "(戌时)", 21: "(亥时)", 22: "(亥时)", 23: "(子时)",
-    };
-    for (let h = 0; h < 24; h++) {
-        const opt = document.createElement("option");
-        opt.value = h;
-        opt.textContent = String(h).padStart(2, "0") + "时 " + shichenLabels[h];
-        hourSel.appendChild(opt);
-    }
-    hourSel.value = "14";
-
-    // 分 0-59
-    minuteSel.innerHTML = "";
-    for (let m = 0; m < 60; m++) {
-        const opt = document.createElement("option");
-        opt.value = m;
-        opt.textContent = String(m).padStart(2, "0") + "分";
-        minuteSel.appendChild(opt);
-    }
-    minuteSel.value = "30";
-
+    _createYearOptions("birth-year", 1995);
+    _createMonthOptions("birth-month");
+    _updateDayOptions("birth");
+    document.getElementById("birth-day").value = "15";
+    _createHourOptions("birth-hour", 14);
+    _createMinuteOptions("birth-minute", 1, 30);
     // 年月变化时重新算日数
-    yearSel.addEventListener("change", updateDayOptions);
-    monthSel.addEventListener("change", updateDayOptions);
+    document.getElementById("birth-year").addEventListener("change", () => _updateDayOptions("birth"));
+    document.getElementById("birth-month").addEventListener("change", () => _updateDayOptions("birth"));
 }
 
-function updateDayOptions() {
-    const yearSel = document.getElementById("birth-year");
-    const monthSel = document.getElementById("birth-month");
-    const daySel = document.getElementById("birth-day");
-    const oldDay = parseInt(daySel.value || "1");
+function updateDayOptions() { _updateDayOptions("birth"); }
 
-    const year = parseInt(yearSel.value);
-    const month = parseInt(monthSel.value);
-
-    let maxDay;
-    if (selectedCalendar === "lunar") {
-        // 农历最多30天
-        maxDay = 30;
-    } else {
-        // 阳历按月份算
-        maxDay = new Date(year, month, 0).getDate();
-    }
-
-    daySel.innerHTML = "";
-    for (let d = 1; d <= maxDay; d++) {
-        const opt = document.createElement("option");
-        opt.value = d;
-        opt.textContent = d + "日";
-        daySel.appendChild(opt);
-    }
-    daySel.value = Math.min(oldDay, maxDay);
-}
-
+// ============================
+// 第四部分：按钮绑定
+// ============================
 function initButtons() {
     document.getElementById("divine-btn").addEventListener("click", divine);
     document.getElementById("bazi-btn").addEventListener("click", () => {
@@ -403,177 +416,94 @@ function initButtons() {
 }
 
 // ============== 起卦（小六壬/六爻） ==============
-async function divine() {
-    const question = document.getElementById("question").value.trim();
-    const saveObsidian = true;
-
-    const resultSection = document.getElementById("result-section");
-    const loading = document.getElementById("loading");
-    const content = document.getElementById("result-content");
+// ============================
+// 第五部分：占卜函数
+// ============================
+// 六爻铜钱动画：显示/隐藏铜钱 vs spinner + 模拟摇卦耗时
+async function _playCoinAnimation() {
     const coinToss = document.getElementById("coin-toss");
     const spinner = document.getElementById("spinner");
-    const loadingText = document.getElementById("loading-text");
+    coinToss.classList.remove("hidden");
+    spinner.classList.add("hidden");
+    coinToss.classList.add("tossing");
+    await sleep(1600);
+    coinToss.classList.remove("tossing");
+}
 
-    resultSection.classList.remove("hidden");
-    loading.classList.remove("hidden");
-    content.innerHTML = "";
+function _resetLoadingView() {
+    const coinToss = document.getElementById("coin-toss");
+    const spinner = document.getElementById("spinner");
+    if (coinToss) coinToss.classList.add("hidden");
+    if (spinner) spinner.classList.remove("hidden");
+}
 
-    // 六爻显示铜钱动画，小六壬显示太极
-    if (currentMode === "liuyao") {
-        coinToss.classList.remove("hidden");
-        spinner.classList.add("hidden");
-        loadingText.textContent = "铜钱起卦，天机推演...";
-        coinToss.classList.add("tossing");
-        await sleep(1600);
-        coinToss.classList.remove("tossing");
-    } else {
-        coinToss.classList.add("hidden");
-        spinner.classList.remove("hidden");
-        loadingText.textContent = "天机推演中...";
-        await sleep(1200);
-    }
+async function divine() {
+    saveBtnText("divine-btn"); setBtnLoading("divine-btn", true);
+    const question = document.getElementById("question").value.trim();
+    const isLiuyao = currentMode === "liuyao";
+
+    _showLoading(isLiuyao ? "铜钱起卦，天机推演..." : "天机推演中...");
 
     try {
-        const endpoint = currentMode === "liuyao" ? "/api/liuyao" : "/api/xiaoliuren";
-        const res = await fetch(endpoint, {
+        // 摇卦动画：六爻显示铜钱，小六壬只 sleep
+        if (isLiuyao) {
+            await _playCoinAnimation();
+        } else {
+            await sleep(1200);
+        }
+
+        const endpoint = isLiuyao ? "/api/liuyao" : "/api/xiaoliuren";
+        const res = await fetchJSON(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question, save_obsidian: saveObsidian }),
+            body: JSON.stringify({ question }),
         });
         const data = await res.json();
-        if (handleRateLimit(res, data)) { const _l = document.getElementById("loading"); if (_l) _l.classList.add("hidden"); return; }
+        if (handleRateLimit(res, data)) { _hideLoading(); return; }
 
-        loading.classList.add("hidden");
-        coinToss.classList.add("hidden");
-        spinner.classList.remove("hidden");
+        _hideLoading();
+        _resetLoadingView();
 
-        if (currentMode === "liuyao") {
-            content.innerHTML = renderLiuyao(data);
-        } else {
-            content.innerHTML = renderXiaoLiuRen(data);
-        }
-        resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        const content = document.getElementById("result-content");
+        content.innerHTML = isLiuyao ? renderLiuyao(data) : renderXiaoLiuRen(data);
+        _scrollToResult();
     } catch (err) {
-        loading.classList.add("hidden");
-        content.innerHTML = `<div class="result-card" style="color: #ff6b6b;">起卦失败：${err.message}</div>`;
+        _hideLoading();
+        _resetLoadingView();
+        _showError("起卦失败：" + err.message);
+    } finally {
+        setBtnLoading("divine-btn", false);
     }
+}
+
+// ============== 八字/紫微共用出生信息 ==============
+function _getBirthPayload() {
+    return {
+        year: parseInt(document.getElementById("birth-year").value),
+        month: parseInt(document.getElementById("birth-month").value),
+        day: parseInt(document.getElementById("birth-day").value),
+        hour: parseInt(document.getElementById("birth-hour").value),
+        minute: parseInt(document.getElementById("birth-minute").value),
+        gender: selectedGender,
+        calendar: selectedCalendar,
+        is_leap: document.getElementById("leap-month").checked,
+    };
 }
 
 // ============== 八字排盘 ==============
 async function divineBazi() {
-    const year = parseInt(document.getElementById("birth-year").value);
-    const month = parseInt(document.getElementById("birth-month").value);
-    const day = parseInt(document.getElementById("birth-day").value);
-    const hour = parseInt(document.getElementById("birth-hour").value);
-    const minute = parseInt(document.getElementById("birth-minute").value);
-    const isLeap = document.getElementById("leap-month").checked;
-
-    const resultSection = document.getElementById("result-section");
-    const loading = document.getElementById("loading");
-    const content = document.getElementById("result-content");
-    const coinToss = document.getElementById("coin-toss");
-    const spinner = document.getElementById("spinner");
-    const loadingText = document.getElementById("loading-text");
-
-    resultSection.classList.remove("hidden");
-    loading.classList.remove("hidden");
-    content.innerHTML = "";
-    coinToss.classList.add("hidden");
-    spinner.classList.remove("hidden");
-    loadingText.textContent = "推算四柱八字...";
-
-    await sleep(1000);
-
-    try {
-        const res = await fetch("/api/bazi", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                year, month, day, hour, minute,
-                gender: selectedGender,
-                calendar: selectedCalendar,
-                is_leap: isLeap,
-            }),
+    await _callApi("/api/bazi", _getBirthPayload(), "bazi-btn", renderBazi, "推算四柱八字...");
+    // 触发五行进度条动画
+    setTimeout(() => {
+        document.querySelectorAll(".wuxing-bar-fill").forEach(b => {
+            b.style.width = b.dataset.width;
         });
-        const data = await res.json();
-        if (handleRateLimit(res, data)) { const _l = document.getElementById("loading"); if (_l) _l.classList.add("hidden"); return; }
-
-        loading.classList.add("hidden");
-
-        if (data.error) {
-            content.innerHTML = `<div class="result-card" style="color: #ff6b6b;">${data.error}</div>`;
-            return;
-        }
-
-        content.innerHTML = renderBazi(data);
-
-        // 八字记录只保存时间，不保存任何敏感信息
-        // 触发五行进度条动画
-        setTimeout(() => {
-            document.querySelectorAll(".wuxing-bar-fill").forEach(b => {
-                b.style.width = b.dataset.width;
-            });
-        }, 100);
-
-        resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (err) {
-        loading.classList.add("hidden");
-        content.innerHTML = `<div class="result-card" style="color: #ff6b6b;">排盘失败：${err.message}</div>`;
-    }
+    }, 100);
 }
 
 // ============== 紫微斗数 ==============
 async function divineZiwei() {
-    const year = parseInt(document.getElementById("birth-year").value);
-    const month = parseInt(document.getElementById("birth-month").value);
-    const day = parseInt(document.getElementById("birth-day").value);
-    const hour = parseInt(document.getElementById("birth-hour").value);
-    const minute = parseInt(document.getElementById("birth-minute").value);
-    const isLeap = document.getElementById("leap-month").checked;
-
-    const resultSection = document.getElementById("result-section");
-    const loading = document.getElementById("loading");
-    const content = document.getElementById("result-content");
-    const coinToss = document.getElementById("coin-toss");
-    const spinner = document.getElementById("spinner");
-    const loadingText = document.getElementById("loading-text");
-
-    resultSection.classList.remove("hidden");
-    loading.classList.remove("hidden");
-    content.innerHTML = "";
-    coinToss.classList.add("hidden");
-    spinner.classList.remove("hidden");
-    loadingText.textContent = "推演紫微星盘...";
-
-    await sleep(1000);
-
-    try {
-        const res = await fetch("/api/ziwei", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                year, month, day, hour, minute,
-                gender: selectedGender,
-                calendar: selectedCalendar,
-                is_leap: isLeap,
-            }),
-        });
-        const data = await res.json();
-        if (handleRateLimit(res, data)) { const _l = document.getElementById("loading"); if (_l) _l.classList.add("hidden"); return; }
-
-        loading.classList.add("hidden");
-
-        if (data.error) {
-            content.innerHTML = `<div class="result-card" style="color: #ff6b6b;">${data.error}</div>`;
-            return;
-        }
-
-        content.innerHTML = renderZiwei(data);
-        resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (err) {
-        loading.classList.add("hidden");
-        content.innerHTML = `<div class="result-card" style="color: #ff6b6b;">排盘失败：${err.message}</div>`;
-    }
+    await _callApi("/api/ziwei", _getBirthPayload(), "bazi-btn", renderZiwei, "推演紫微星盘...");
 }
 
 // ============== 渲染：紫微命盘 ==============
@@ -942,11 +872,7 @@ function renderXiaoLiuRen(data) {
     const r = data.result;
     const time = formatTime(data.datetime);
 
-    let savedHTML = "";
-    if (data.saved_path) {
-        savedHTML = `<div class="saved-toast"> 已保存到 Obsidian：${data.saved_path.split('/').pop()}</div>`;
-    }
-
+    let savedHTML = _savedBlock(data);
     return `
         <div class="result-card">
             <div class="result-header">
@@ -1014,10 +940,7 @@ function renderLiuyao(data) {
     const bg = data.ben_gua;
     const time = formatTime(data.datetime);
 
-    let savedHTML = "";
-    if (data.saved_path) {
-        savedHTML = `<div class="saved-toast"> 已保存到 Obsidian：${data.saved_path.split('/').pop()}</div>`;
-    }
+    const savedHTML = _savedBlock(data);
 
     const yaoRows = [...data.yao_details].reverse().map(y => {
         const cls = [
@@ -1136,93 +1059,21 @@ function escapeHtml(s) {
 
 // ============== 合婚 ==============
 function initHehunSelects() {
-    const currentYear = new Date().getFullYear();
-
     ["p1", "p2"].forEach(p => {
-        const yearSel = document.getElementById(`${p}-year`);
-        const monthSel = document.getElementById(`${p}-month`);
-        const daySel = document.getElementById(`${p}-day`);
-        const hourSel = document.getElementById(`${p}-hour`);
-        const minuteSel = document.getElementById(`${p}-minute`);
-
-        if (!yearSel) return;
-
-        // 年份
-        for (let y = currentYear; y >= 1900; y--) {
-            const opt = document.createElement("option");
-            opt.value = y;
-            opt.textContent = y + "年";
-            yearSel.appendChild(opt);
-        }
-        yearSel.value = 1995;
-
-        // 月份
-        for (let m = 1; m <= 12; m++) {
-            const opt = document.createElement("option");
-            opt.value = m;
-            opt.textContent = m + "月";
-            monthSel.appendChild(opt);
-        }
-
-        // 日数
-        updateHehunDayOptions(p);
-        yearSel.addEventListener("change", () => updateHehunDayOptions(p));
-        monthSel.addEventListener("change", () => updateHehunDayOptions(p));
-
-        // 小时（带时辰标注）
-        const shichen = ["子", "子", "丑", "丑", "寅", "寅", "卯", "卯", "辰", "辰", "巳", "巳",
-                         "午", "午", "未", "未", "申", "申", "酉", "酉", "戌", "戌", "亥", "亥"];
-        for (let h = 0; h < 24; h++) {
-            const opt = document.createElement("option");
-            opt.value = h;
-            opt.textContent = `${String(h).padStart(2, "0")}时（${shichen[h]}）`;
-            hourSel.appendChild(opt);
-        }
-
-        // 分钟
-        for (let mn = 0; mn < 60; mn += 5) {
-            const opt = document.createElement("option");
-            opt.value = mn;
-            opt.textContent = String(mn).padStart(2, "0") + "分";
-            minuteSel.appendChild(opt);
-        }
+        _createYearOptions(p+"-year", 1995);
+        _createMonthOptions(p+"-month");
+        _updateDayOptions(p, `.hehun-cal[data-person="${p}"]`);
+        document.getElementById(p+"-year").addEventListener("change", () => _updateDayOptions(p, `.hehun-cal[data-person="${p}"]`));
+        document.getElementById(p+"-month").addEventListener("change", () => _updateDayOptions(p, `.hehun-cal[data-person="${p}"]`));
+        _createHourOptions(p+"-hour");
+        _createMinuteOptions(p+"-minute", 5);
     });
-
     // 默认 p2 年份不一样
     const p2Year = document.getElementById("p2-year");
     if (p2Year) p2Year.value = 1996;
 }
 
-function updateHehunDayOptions(p) {
-    const yearSel = document.getElementById(`${p}-year`);
-    const monthSel = document.getElementById(`${p}-month`);
-    const daySel = document.getElementById(`${p}-day`);
-    if (!yearSel || !daySel) return;
-
-    const year = parseInt(yearSel.value);
-    const month = parseInt(monthSel.value);
-
-    // 当前历法
-    const calContainer = document.querySelector(`.hehun-cal[data-person="${p}"]`);
-    const isLunar = calContainer?.querySelector(".cal-tab.active")?.dataset.cal === "lunar";
-
-    let maxDay = 31;
-    if (isLunar) {
-        maxDay = 30;
-    } else {
-        maxDay = new Date(year, month, 0).getDate();
-    }
-
-    const oldDay = parseInt(daySel.value) || 1;
-    daySel.innerHTML = "";
-    for (let d = 1; d <= maxDay; d++) {
-        const opt = document.createElement("option");
-        opt.value = d;
-        opt.textContent = d + "日";
-        daySel.appendChild(opt);
-    }
-    daySel.value = Math.min(oldDay, maxDay);
-}
+function updateHehunDayOptions(p) { _updateDayOptions(p, `.hehun-cal[data-person="${p}"]`); }
 
 function getHehunPersonData(p) {
     const genderContainer = document.querySelector(`.hehun-gender[data-person="${p}"]`);
@@ -1244,41 +1095,8 @@ function getHehunPersonData(p) {
 }
 
 async function divineHehun() {
-    const resultSection = document.getElementById("result-section");
-    const loading = document.getElementById("loading");
-    const content = document.getElementById("result-content");
-
-    resultSection.classList.remove("hidden");
-    loading.classList.remove("hidden");
-    content.innerHTML = "";
-
-    const payload = {
-        ...getHehunPersonData("p1"),
-        ...getHehunPersonData("p2"),
-    };
-
-    try {
-        const res = await fetch("/api/he_hun", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (handleRateLimit(res, data)) { const _l = document.getElementById("loading"); if (_l) _l.classList.add("hidden"); return; }
-
-        if (data.error) {
-            content.innerHTML = `<div class="result-card"><p style="color:#ff6666;">${data.error}</p></div>`;
-            return;
-        }
-
-        content.innerHTML = renderHehun(data);
-        // 滚动结果
-        resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (e) {
-        content.innerHTML = `<div class="result-card"><p style="color:#ff6666;">请求失败：${e.message}</p></div>`;
-    } finally {
-        loading.classList.add("hidden");
-    }
+    const payload = { ...getHehunPersonData("p1"), ...getHehunPersonData("p2") };
+    await _callApi("/api/he_hun", payload, "hehun-btn", renderHehun);
 }
 
 function renderHehun(d) {
@@ -1373,48 +1191,16 @@ function renderHehun(d) {
 // ============== 梅花易数 ==============
 async function divineMeihua() {
     const question = document.getElementById("meihua-question").value.trim();
-    const saveObsidian = true;
-    const activeMode = document.querySelector(".meihua-mode-tab.active")?.dataset.mhmode || "time";
-    const useTime = activeMode === "time";
-
-    let payload = { question, save_obsidian: saveObsidian, use_time: useTime };
+    const useTime = document.querySelector(".meihua-mode-tab.active")?.dataset.mhmode === "time";
+    const payload = { question, use_time: useTime };
     if (!useTime) {
         const n1 = parseInt(document.getElementById("meihua-num1").value);
         const n2 = parseInt(document.getElementById("meihua-num2").value);
-        if (!n1 || !n2) {
-            alert("请填两个数字");
-            return;
-        }
+        if (!n1 || !n2) { alert("请填两个数字"); return; }
         payload.num1 = n1;
         payload.num2 = n2;
     }
-
-    const resultSection = document.getElementById("result-section");
-    const loading = document.getElementById("loading");
-    const resultContent = document.getElementById("result-content");
-    resultSection.classList.remove("hidden");
-    loading.classList.remove("hidden");
-    resultContent.innerHTML = "";
-    document.getElementById("coin-toss")?.classList.add("hidden");
-
-    try {
-        const res = await fetch("/api/meihua", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (handleRateLimit(res, data)) { const _l = document.getElementById("loading"); if (_l) _l.classList.add("hidden"); return; }
-        if (data.error) {
-            resultContent.innerHTML = `<div class="error"> ${data.error}</div>`;
-        } else {
-            resultContent.innerHTML = renderMeihua(data);
-        }
-    } catch (e) {
-        resultContent.innerHTML = `<div class="error"> 请求失败：${e.message}</div>`;
-    } finally {
-        loading.classList.add("hidden");
-    }
+    await _callApi("/api/meihua", payload, "meihua-btn", renderMeihua);
 }
 
 function renderMeihua(d) {
@@ -1439,9 +1225,7 @@ function renderMeihua(d) {
     };
     const lvColor = levelColor[ty.level] || '#8b8b8b';
 
-    const savedBlock = d.saved_path
-        ? `<div class="saved-tip"> 已保存到 Obsidian：<code>${d.saved_path.split('/').pop()}</code></div>`
-        : '';
+    const savedBlock = _savedBlock(d);
 
     return `
         <div class="meihua-result">
@@ -1492,37 +1276,8 @@ function renderMeihua(d) {
 // ============== 奇门遁甲 ==============
 async function divineQimen() {
     const question = document.getElementById("qimen-question").value.trim();
-    const saveObsidian = true;
     const opt = parseInt(document.querySelector(".qimen-opt-tab.active")?.dataset.qmopt || "2");
-
-    const payload = { question, save_obsidian: saveObsidian, option: opt };
-
-    const resultSection = document.getElementById("result-section");
-    const loading = document.getElementById("loading");
-    const resultContent = document.getElementById("result-content");
-    resultSection.classList.remove("hidden");
-    loading.classList.remove("hidden");
-    resultContent.innerHTML = "";
-    document.getElementById("coin-toss")?.classList.add("hidden");
-
-    try {
-        const res = await fetch("/api/qimen", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (handleRateLimit(res, data)) { const _l = document.getElementById("loading"); if (_l) _l.classList.add("hidden"); return; }
-        if (data.error) {
-            resultContent.innerHTML = `<div class="error"> ${data.error}</div>`;
-        } else {
-            resultContent.innerHTML = renderQimen(data);
-        }
-    } catch (e) {
-        resultContent.innerHTML = `<div class="error"> 请求失败：${e.message}</div>`;
-    } finally {
-        loading.classList.add("hidden");
-    }
+    await _callApi("/api/qimen", { question, option: opt }, "qimen-btn", renderQimen);
 }
 
 function renderQimen(d) {
@@ -1563,9 +1318,7 @@ function renderQimen(d) {
             </div>`;
     }).join('');
 
-    const savedBlock = d.saved_path
-        ? `<div class="saved-tip"> 已保存到 Obsidian：<code>${d.saved_path.split('/').pop()}</code></div>`
-        : '';
+    const savedBlock = _savedBlock(d);
 
     return `
         <div class="qimen-result">
@@ -1624,33 +1377,7 @@ function renderQimen(d) {
 // ============== 黄历 ==============
 async function divineHuangli() {
     const date = document.getElementById("huangli-date").value;
-
-    const resultSection = document.getElementById("result-section");
-    const loading = document.getElementById("loading");
-    const resultContent = document.getElementById("result-content");
-    resultSection.classList.remove("hidden");
-    loading.classList.remove("hidden");
-    resultContent.innerHTML = "";
-    document.getElementById("coin-toss")?.classList.add("hidden");
-
-    try {
-        const res = await fetch("/api/huangli", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ date })
-        });
-        const data = await res.json();
-        if (handleRateLimit(res, data)) { const _l = document.getElementById("loading"); if (_l) _l.classList.add("hidden"); return; }
-        if (data.error) {
-            resultContent.innerHTML = `<div class="error"> ${data.error}</div>`;
-        } else {
-            resultContent.innerHTML = renderHuangli(data);
-        }
-    } catch (e) {
-        resultContent.innerHTML = `<div class="error"> 请求失败：${e.message}</div>`;
-    } finally {
-        loading.classList.add("hidden");
-    }
+    await _callApi("/api/huangli", { date }, "huangli-btn", renderHuangli);
 }
 
 function renderHuangli(d) {
@@ -1775,105 +1502,31 @@ async function interpretDream() {
     const mood = document.getElementById("dream-mood").value.trim();
     const context = document.getElementById("dream-context").value.trim();
 
-    if (!dreamText) {
-        alert("梦境内容不能为空哦");
-        return;
-    }
-    if (dreamText.length > 2000) {
-        alert("梦境太长了（最多 2000 字），分段做");
-        return;
-    }
+    if (!dreamText) { alert("梦境内容不能为空哦"); return; }
+    if (dreamText.length > 2000) { alert("梦境太长了（最多 2000 字），分段做"); return; }
 
-    const resultSection = document.getElementById("result-section");
-    const loading = document.getElementById("loading");
-    const loadingText = document.getElementById("loading-text");
-    const resultContent = document.getElementById("result-content");
-    resultSection.classList.remove("hidden");
-    loading.classList.remove("hidden");
-    resultContent.innerHTML = "";
-    document.getElementById("coin-toss")?.classList.add("hidden");
-    if (loadingText) loadingText.textContent = "AI 正在解读你的梦境...";
-
-    try {
-        const res = await fetch("/api/dream", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                dream_text: dreamText,
-                mood: mood,
-                context: context,
-                save_obsidian: true,
-            }),
-        });
-        const data = await res.json();
-        if (handleRateLimit(res, data)) { const _l = document.getElementById("loading"); if (_l) _l.classList.add("hidden"); return; }
-        if (data.error) {
-            resultContent.innerHTML = `<div class="error">${escapeHtml(data.error)}</div>`;
-        } else {
-            resultContent.innerHTML = renderDream(data);
-        }
-    } catch (e) {
-        resultContent.innerHTML = `<div class="error">请求失败：${escapeHtml(e.message)}</div>`;
-    } finally {
-        loading.classList.add("hidden");
-    }
+    await _callApi("/api/dream", {
+        dream_text: dreamText, mood, context,
+    }, "dream-btn", renderDream, "正在解梦...");
 }
 
 function renderDream(d) {
-    const z = d.zhougong || {};
-    const p = d.psychology || {};
-    const symbols = (z.symbols || []).map(s =>
-        `<span class="dream-tag dream-tag-trad">${escapeHtml(s)}</span>`
-    ).join('');
-    const archetypes = (p.archetypes || []).map(s =>
-        `<span class="dream-tag dream-tag-psych">${escapeHtml(s)}</span>`
-    ).join('');
-    const suggestions = (d.suggestions || []).map(s =>
-        `<li>${escapeHtml(s)}</li>`
-    ).join('');
-
-    const meta = [];
-    if (d.mood_on_wake) meta.push(`<span class="dream-meta-item">情绪：${escapeHtml(d.mood_on_wake)}</span>`);
-    if (d.context) meta.push(`<span class="dream-meta-item">处境：${escapeHtml(d.context)}</span>`);
-
     return `
-        <div class="dream-result">
-            <div class="dream-header">
-                <div class="dream-title">解梦</div>
-                <div class="dream-meta">${meta.join('')}</div>
+        <div class="result-card dream-result">
+            <h2 class="result-header"> 解梦排盘</h2>
+            <div class="dream-meta">
+                <div><span class="zw-k">日期</span> ${escapeHtml(d.dream_date || '')}</div>
+                ${d.mood_on_wake ? `<div><span class="zw-k">醒时情绪</span> ${escapeHtml(d.mood_on_wake)}</div>` : ''}
+                ${d.context ? `<div><span class="zw-k">处境</span> ${escapeHtml(d.context)}</div>` : ''}
             </div>
-
             <div class="dream-original">
-                <div class="dream-section-label">梦境原文</div>
-                <div class="dream-original-text">${escapeHtml(d.dream_text || '')}</div>
+                <div class="zw-k" style="margin-bottom:0.5em;">梦境原文</div>
+                <div style="line-height:1.8;color:var(--text-primary);background:rgba(255,255,255,0.03);padding:1em;border-radius:8px;border-left:3px solid var(--gold);">
+                    ${escapeHtml(d.dream_text || '')}
+                </div>
             </div>
-
-            <div class="dream-card dream-card-trad">
-                <h3 class="dream-card-title">周公视角</h3>
-                ${symbols ? `<div class="dream-tags">${symbols}</div>` : ''}
-                <p class="dream-text">${escapeHtml(z.interpretation || '')}</p>
-            </div>
-
-            <div class="dream-card dream-card-psych">
-                <h3 class="dream-card-title">心理学视角</h3>
-                ${archetypes ? `<div class="dream-tags">${archetypes}</div>` : ''}
-                <p class="dream-text">${escapeHtml(p.interpretation || '')}</p>
-            </div>
-
-            <div class="dream-card dream-card-summary">
-                <h3 class="dream-card-title">综合给你的话</h3>
-                <p class="dream-summary-text">${escapeHtml(d.summary || '')}</p>
-            </div>
-
-            ${suggestions ? `
-            <div class="dream-card dream-card-suggestions">
-                <h3 class="dream-card-title">落地建议</h3>
-                <ul class="dream-suggestions">${suggestions}</ul>
-            </div>
-            ` : ''}
-
-            <div class="dream-tips">
-                解梦仅供参考，不是命理预言。记录已自动存入 Obsidian。
+            <div class="dream-tips" style="margin-top:1.2em;font-size:0.85em;color:var(--text-secondary);">
+                以上为梦境排版，解读请将截图或原文发给 Hermes。
             </div>
         </div>
     `;

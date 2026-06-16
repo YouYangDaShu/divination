@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>玄机阁 · 八字六爻小六壬</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=1">
+    <link href="https://fonts.loli.net/css2?family=Ma+Shan+Zheng&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
 </head>
 <body>
     <!-- 背景动效 -->
@@ -84,13 +84,6 @@
                 <label class="input-label">心中所问</label>
                 <input type="text" id="question" class="question-input" placeholder="心诚则灵，请输入想问之事...（可留空）" maxlength="50">
 
-                <div class="ai-context-field">
-                    <label class="ai-context-label">🔮 想让 AI 结合你的情况细说？（选填）</label>
-                    <textarea class="question-input ai-context" rows="2" maxlength="500"
-                        placeholder="可写下你的具体处境，例如：最近在纠结要不要换工作、和对象闹了矛盾...AI 会结合卦象给你说说（留空则只出传统卦象）"
-                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
-                </div>
-
                 <button id="divine-btn" class="divine-btn">
                     <span class="btn-text">起 卦</span>
                     <span class="btn-icon"></span>
@@ -141,13 +134,6 @@
                 </div>
 
                 <p class="form-hint"> 时辰要尽量准确。古代以两小时为一时辰：子(23-1)、丑(1-3)、寅(3-5)…</p>
-
-                <div class="ai-context-field">
-                    <label class="ai-context-label">🔮 想让 AI 结合你的情况细说？（选填）</label>
-                    <textarea class="question-input ai-context" rows="2" maxlength="500"
-                        placeholder="可写下你的具体处境，例如：最近事业遇到瓶颈、感情上有困惑...AI 会结合命盘给你说说（留空则只出传统命盘）"
-                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
-                </div>
 
                 <button id="bazi-btn" class="divine-btn">
                     <span class="btn-text">排 盘</span>
@@ -238,13 +224,6 @@
                     </div>
                 </div>
 
-                <div class="ai-context-field">
-                    <label class="ai-context-label">🔮 想让 AI 结合你们的情况细说？（选填）</label>
-                    <textarea class="question-input ai-context" rows="2" maxlength="500"
-                        placeholder="可写下你们的具体情况，例如：在一起多久了、家里有什么顾虑...AI 会结合合婚结果给你说说（留空则只出传统合婚分析）"
-                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
-                </div>
-
                 <button id="hehun-btn" class="divine-btn">
                     <span class="btn-text">合 八 字</span>
                     <span class="btn-icon"></span>
@@ -271,13 +250,6 @@
                     <input type="number" id="meihua-num2" placeholder="第二个数（下卦+动爻）" min="1" max="9999" class="question-input" style="flex:1;">
                 </div>
 
-                <div class="ai-context-field">
-                    <label class="ai-context-label">🔮 想让 AI 结合你的情况细说？（选填）</label>
-                    <textarea class="question-input ai-context" rows="2" maxlength="500"
-                        placeholder="可写下你想问的具体事情，AI 会结合卦象给你说说（留空则只出传统卦象）"
-                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
-                </div>
-
                 <button id="meihua-btn" class="divine-btn">
                     <span class="btn-text">起 梅 花 卦</span>
                     <span class="btn-icon"></span>
@@ -299,13 +271,6 @@
                     </div>
                 </div>
 
-                <div class="ai-context-field">
-                    <label class="ai-context-label">🔮 想让 AI 结合你的情况细说？（选填）</label>
-                    <textarea class="question-input ai-context" rows="2" maxlength="500"
-                        placeholder="可写下你想问的具体事情，AI 会结合奇门盘给你说说（留空则只出传统排盘）"
-                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
-                </div>
-
                 <button id="qimen-btn" class="divine-btn">
                     <span class="btn-text">起 奇 门 局</span>
                     <span class="btn-icon"></span>
@@ -319,13 +284,6 @@
                 <label class="input-label">查询日期</label>
                 <input type="date" id="huangli-date" class="question-input">
                 <div style="font-size:0.86em;color:#888;margin-top:6px;">留空查今日</div>
-
-                <div class="ai-context-field">
-                    <label class="ai-context-label">🔮 想让 AI 结合你的安排细说？（选填）</label>
-                    <textarea class="question-input ai-context" rows="2" maxlength="500"
-                        placeholder="可写下你这天的安排或想问的事，例如：想挑个日子搬家、签合同...AI 会结合黄历给你说说（留空则只出传统黄历）"
-                        style="resize:vertical;min-height:52px;font-family:inherit;line-height:1.6;"></textarea>
-                </div>
 
                 <button id="huangli-btn" class="divine-btn" style="margin-top:14px;">
                     <span class="btn-text">查 黄 历</span>
@@ -395,6 +353,6 @@
         </footer>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=1"></script>
 </body>
 </html>

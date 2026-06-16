@@ -459,9 +459,10 @@ def format_ziwei_markdown(r: Dict) -> str:
     for p in palaces:
         flags = []
         if p.get("is_body_palace"): flags.append("身宫")
-        if p.get("is_original_palace"): flags.append("命宫")
+        if p.get("is_original_palace") and p.get("name") != "命宫": flags.append("命宫")
         flag_str = f" · {' · '.join(flags)}" if flags else ""
-        lines.append(f"### {p['name']}宫{flag_str}")
+        suffix = "" if p['name'].endswith('宫') else "宫"
+        lines.append(f"### {p['name']}{suffix}{flag_str}")
         lines.append(f"- 干支：{p.get('stem','')}{p.get('branch','')}")
         d = p.get("decadal") or {}
         rng = d.get("range") or []
@@ -716,6 +717,18 @@ def export_to_obsidian(record: Dict, kind: str) -> Optional[str]:
         text_short = (record.get("dream_text") or "无题")[:20].replace("/", "-")
         filename = f"{timestamp}-解梦-{date_str}-{text_short}.md"
         content = format_dream_markdown(record)
+    elif kind == "bazi":
+        date_short = (record.get("birth") or "无日期")[:10]
+        gender_short = record.get("gender", "")
+        filename = f"{timestamp}-八字-{date_short}-{gender_short}.md"
+        content = format_bazi_markdown(record)
+    elif kind == "hehun":
+        p1 = record.get("person1", {}) or {}
+        p2 = record.get("person2", {}) or {}
+        d1 = (p1.get("birth") or "")[:10]
+        d2 = (p2.get("birth") or "")[:10]
+        filename = f"{timestamp}-合婚-{d1}-{d2}.md"
+        content = format_hehun_markdown(record)
     else:
         gua = record["result"]["name"]
         question_short = (record["question"] or "无题")[:20]
@@ -854,6 +867,121 @@ def format_dream_markdown(r: Dict) -> str:
         "---",
         f"*模型：{r.get('model', '')}*",
         " 解梦仅供参考，不是命理预言。",
+    ])
+    return "\n".join(md)
+
+
+def format_bazi_markdown(r: Dict) -> str:
+    """八字记录的 Obsidian markdown 渲染。"""
+    columns = r.get("columns", []) or []
+    day_gan = r.get("day_gan", "?")
+    day_wuxing = r.get("day_wuxing", "?")
+    gender = r.get("gender", "?")
+    birth = r.get("birth", "?")
+    da_yun = r.get("da_yun", []) or []
+    md = [
+        "---",
+        f"date: {r.get('datetime', '')}",
+        "type: 八字",
+        f"gender: {gender}",
+        f"day_master: {day_gan}({day_wuxing})",
+        f"tags: [占卜, 八字, {day_gan}{day_wuxing}]",
+        "---",
+        "",
+        f"# 八字命盘 - {day_gan}{day_wuxing}日主",
+        "",
+        f"**性别**：{gender}  ",
+        f"**出生**：{birth}  ",
+        f"**日主**：{day_gan}({day_wuxing})",
+        "",
+        "## 四柱",
+        "",
+    ]
+    # 四柱表头
+    headers = ["年柱", "月柱", "日柱", "时柱"]
+    md.append("| " + " | ".join(headers) + " |")
+    md.append("|" + "|".join(["---"] * 4) + "|")
+    if columns:
+        gz_row = []
+        for c in columns:
+            gz_row.append(c.get("ganzhi", ""))
+        md.append("| " + " | ".join(gz_row) + " |")
+        g_row = []
+        for c in columns:
+            shen = c.get("shi_shen_gan", "")
+            g_row.append(f"{c.get('gan', '')} {shen}".strip())
+        md.append("| " + " | ".join(g_row) + " |")
+        z_row = []
+        for c in columns:
+            z_row.append(f"{c.get('zhi', '')}")
+        md.append("| " + " | ".join(z_row) + " |")
+    md.append("")
+    md.append("## 大运")
+    md.append("")
+    if da_yun:
+        for dy in da_yun[:12]:
+            age = dy.get("age_start", "")
+            end = dy.get("age_end", "")
+            gz = dy.get("ganzhi", "")
+            md.append(f"- {age}-{end}岁：{gz}")
+    else:
+        md.append("无大运信息")
+    md.append("")
+    md.extend([
+        "---",
+        "*八字排盘仅做基础参考。*",
+    ])
+    return "\n".join(md)
+
+
+def format_hehun_markdown(r: Dict) -> str:
+    """合婚记录的 Obsidian markdown 渲染。"""
+    p1 = r.get("person1", {}) or {}
+    p2 = r.get("person2", {}) or {}
+    md = [
+        "---",
+        f"date: {r.get('datetime', '')}",
+        "type: 合婚",
+        f"total_score: {r.get('total_score', 0)}",
+        f"verdict: {r.get('verdict', '')}",
+        f"tags: [占卜, 合婚, {r.get('rating', '')}]",
+        "---",
+        "",
+        f"# 合婚分析 - {r.get('total_score', 0)}分",
+        "",
+        f"**男方**：{p1.get('gender', '?')} {p1.get('birth', '?')}  ",
+        f"**女方**：{p2.get('gender', '?')} {p2.get('birth', '?')}  ",
+        f"**评分**：{r.get('total_score', 0)}分 ({r.get('rating', '')})",
+        f"**评语**：{r.get('verdict', '')}",
+        "",
+        "## 双方八字",
+        "",
+        f"- 男：{p1.get('bazi', '?')}",
+        f"- 女：{p2.get('bazi', '?')}",
+        "",
+        "## 吉象 (blessings)",
+        "",
+    ]
+    for b in (r.get("blessings", []) or []):
+        md.append(f"- {b}")
+    md.append("")
+    md.append("## 注意事项 (issues)")
+    md.append("")
+    for issue in (r.get("issues", []) or []):
+        md.append(f"- {issue}")
+    md.append("")
+    details = r.get("details", []) or []
+    if details:
+        md.append("## 详细分项")
+        md.append("")
+        for d in details:
+            md.append(f"### {d.get('category', '')} - {d.get('score', 0)}分")
+            md.append("")
+            md.append(d.get("comment", ""))
+            md.append("")
+    md.extend([
+        "---",
+        "*合婚仅作参考，婚姻幸福取决于双方经营。*",
     ])
     return "\n".join(md)
 

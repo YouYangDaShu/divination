@@ -173,40 +173,7 @@ body {
 }
 
 /* AI 处境输入框 */
-.ai-context-field {
-    margin-top: 14px;
-    margin-bottom: 4px;
-}
-.ai-context-label {
-    display: block;
-    font-size: 0.85rem;
-    color: var(--gold);
-    margin-bottom: 6px;
-    opacity: 0.9;
-}
-/* AI 解读结果卡片 */
-.ai-reading-card {
-    border: 1px solid rgba(245, 200, 99, 0.35);
-    background: linear-gradient(135deg, rgba(245, 200, 99, 0.08), rgba(167, 133, 255, 0.06));
-}
-.ai-reading-title {
-    font-size: 1rem;
-    color: var(--gold-bright);
-    font-weight: 700;
-    margin-bottom: 10px;
-}
-.ai-reading-body {
-    font-size: 0.96rem;
-    line-height: 1.85;
-    color: var(--text-primary, #e8e2ff);
-}
-.ai-reading-foot {
-    margin-top: 12px;
-    font-size: 0.78rem;
-    color: var(--text-secondary);
-    opacity: 0.6;
-    text-align: center;
-}
+/*（无内置AI）*/
 
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-20px); }
@@ -1787,7 +1754,10 @@ body {
 .hehun-bless h4 { color: #d4af37; }
 .hehun-issue h4 { color: #d96f6f; }
 
-/* ===== 紫微斗数 ===== */
+/* 错误提示卡片 */
+.error-card { color: #ff6b6b; padding: 12px; text-align: center; }
+
+/* ===== 工具类 ===== */
 .ziwei-head { padding: 20px; }
 .ziwei-title {
     font-size: 1.5rem;
@@ -2039,7 +2009,7 @@ body {
 .meihua-tips strong {
     color: var(--gold-bright);
 }
-.meihua-mode-tab {
+.meihua-mode-tab, .qimen-opt-tab {
     background: rgba(40, 28, 80, 0.4);
     border: 1px solid rgba(245, 200, 99, 0.3);
     color: #d6c9a8;
@@ -2049,7 +2019,7 @@ body {
     font-size: 0.92em;
     transition: all 0.18s;
 }
-.meihua-mode-tab.active {
+.meihua-mode-tab.active, .qimen-opt-tab.active {
     background: var(--gold);
     border-color: var(--gold);
     color: var(--bg-primary);
@@ -2208,22 +2178,7 @@ body {
     font-size: 0.84em;
     margin: 8px 0 16px;
 }
-.qimen-opt-tab {
-    background: rgba(40, 28, 80, 0.4);
-    border: 1px solid rgba(245, 200, 99, 0.3);
-    color: #d6c9a8;
-    padding: 8px 16px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.92em;
-    transition: all 0.18s;
-}
-.qimen-opt-tab.active {
-    background: var(--gold);
-    border-color: var(--gold);
-    color: var(--bg-primary);
-    font-weight: 600;
-}
+
 
 @media (max-width: 600px) {
     .qm-cell {
