@@ -1,3 +1,13 @@
+<!-- DREAMFIELD_README_HEADER_START -->
+
+<p align="center">
+  <a href="https://www.dreamfield.top">
+    <img src="https://www.dreamfield.top/dream-field/contest-readme/assets/dreamseed-readme-banner.png" alt="DreamSeed 种梦计划参赛作品" width="100%" />
+  </a>
+</p>
+
+<!-- DREAMFIELD_README_HEADER_END -->
+
 # 🔮 玄机阁 - 中国传统占卜系统
 
 一个基于 Flask 的中国传统占卜网页应用，支持六爻、小六壬、八字、紫微斗数、梅花易数、奇门遁甲、黄历查询、解梦等多种占卜方式。
